@@ -40,7 +40,6 @@ export class MemViewPanel {
     public static currentPanel: MemViewPanel | undefined;
     public static readonly viewType = 'sigView';
     private readonly _panel: vscode.WebviewPanel;
-    private readonly _extensionUri: vscode.Uri;
     private _pageParam: MemArrayParam = new MemArrayParam();
     private _disposables: vscode.Disposable[] = [];
     private _tracker: MemViewTracker | undefined = undefined;
@@ -76,7 +75,6 @@ export class MemViewPanel {
     private constructor(panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
         this._panel = panel;
         this._context = context;
-        this._extensionUri = context.extensionUri;
 
         // Set the webview's initial html content
         this._update();
@@ -164,10 +162,10 @@ export class MemViewPanel {
     }
 
     private _getHtmlForWebview(webview: vscode.Webview) {
-        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
-        const stylesResetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'reset.css'));
-        const stylesMainUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'vscode.css'));
-        const plotlyUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'plotly-latest.min.js'));
+        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._context.extensionUri, 'media', 'main.js'));
+        const stylesResetUri = webview.asWebviewUri(vscode.Uri.joinPath(this._context.extensionUri, 'media', 'reset.css'));
+        const stylesMainUri = webview.asWebviewUri(vscode.Uri.joinPath(this._context.extensionUri, 'media', 'vscode.css'));
+        const plotlyUri = webview.asWebviewUri(vscode.Uri.joinPath(this._context.extensionUri, 'media', 'plotly-latest.min.js'));
         const filePath: vscode.Uri = vscode.Uri.file(path.join(this._context.extensionPath, 'media', 'index.html'));
         const mainDiv = fs.readFileSync(filePath.fsPath, 'utf8');
 

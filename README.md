@@ -13,7 +13,15 @@ Visual Studio Code extension for viewing signals in debug mode
 - Read and view memory by pointer (experimental for `C/C++`);
 - Works via `vscode.DebugSession` (those. most languages ​​should be supported);
 
+### Install
+
+```sh
+cd vscode-sigview
+npm update
+vsce package
+code --install-extension sigview-0.0.X.vsix
+```
+
 ### Commands
 
 `SigView: Create view panel` to create panel with plot on current debug session.
-
