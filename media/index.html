@@ -1,0 +1,48 @@
+<div>
+    <div class="row">
+        <div class="block">array: <input id="arrayName"></div>
+        <div class="block">length: <input id="arrayLength"></div>
+    </div>
+
+    <hr>
+
+    <div class="block">
+        plot:
+        <select id="plotType">
+            <option>Signal</option>
+            <option>Spectrum</option>
+        </select>
+    </div>
+
+    <hr>
+
+    <div id="sigTab" class="tabcontent" style="width:100%">
+        <div id="sigPlot" style="height:250px"></div>
+    </div>
+
+    <div id="specTab" class="tabcontent" style="width:100%">
+        <div>
+            <div class="row">
+                <div class="block">
+                    window:
+                    <select id="specWinType">
+                        <option>Hann</option>
+                        <option>Hamming</option>
+                        <option>Sinus</option>
+                    </select>
+                </div>
+                <div class="block">
+                    amplitude:
+                    <select id="specAmpUnits">
+                        <option>dB</option>
+                        <option>mag</option>
+                        <option>pow</option>
+                    </select>
+                </div>
+                <div class="block">sample rate: <input id="specSampleRate" value="1.0"></div>
+                <div class="block">full scale: <input id="specFullScale" value="1.0"></div>
+            </div>
+        </div>
+        <div id="specPlot" style="height:250px"></div>
+    </div>
+</div>
