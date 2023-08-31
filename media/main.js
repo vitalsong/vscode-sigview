@@ -5,12 +5,22 @@ function changedParam(vscode) {
         sampleRate: document.getElementById("specSampleRate").value,
         ampScale: document.getElementById("specAmpUnits").value,
     };
+
+    let memParam = undefined;
+    if (document.getElementById('dataTypeBlock').style.display === 'block') {
+        memParam = {
+            dataType: document.getElementById('dataType').value,
+            dataEndian: document.getElementById('dataEndian').value,
+        };
+    }
+
     vscode.postMessage({
         command: 'changedParam',
         arrayName: document.getElementById("arrayName").value,
         arrayLength: document.getElementById("arrayLength").value,
         plotType: document.getElementById("plotType").value,
         specParam: specParam,
+        memParam: memParam,
     });
 }
 
@@ -25,8 +35,20 @@ function changedPlot(vscode) {
     changedParam(vscode);
 }
 
-function replot(plotElem, yScale, xScale)
-{
+
+function updateMemoryMode(param) {
+    if (param.enabled && param.type && param.endian) {
+        document.getElementById('dataTypeBlock').style.display = 'block';
+        document.getElementById('dataEndianBlock').style.display = 'block';
+        document.getElementById('dataType').value = param.type;
+        document.getElementById('dataEndian').value = param.endian;
+    } else {
+        document.getElementById('dataTypeBlock').style.display = 'none';
+        document.getElementById('dataEndianBlock').style.display = 'none';
+    }
+}
+
+function replot(plotElem, yScale, xScale) {
     const margin = { l: 30, r: 20, t: 20, b: 20 };
     // var xScale = Array.from(Array(yScale.length).keys());
     let trace = {
@@ -47,8 +69,11 @@ function main() {
     //array param changed
     document.getElementById("arrayName").addEventListener("change", () => changedParam(vscode));
     document.getElementById("arrayLength").addEventListener("change", () => changedParam(vscode));
+    document.getElementById("dataType").addEventListener("change", () => changedParam(vscode));
+    document.getElementById("dataEndian").addEventListener("change", () => changedParam(vscode));
+
     document.getElementById("plotType").addEventListener("change", () => changedPlot(vscode));
-    
+
     //changed spectrum param
     // document.getElementById("specTabLink").addEventListener("click", () => showSpectrumTab(vscode));
     document.getElementById("specWinType").addEventListener("change", () => changedParam(vscode));
@@ -58,22 +83,27 @@ function main() {
 
     //update for default
     changedPlot(vscode);
+    updateMemoryMode({enabled: false});
 
     window.addEventListener('message', event => {
         const message = event.data;
+        const plot = document.getElementById('sigPlot');
         switch (message.command) {
             case 'scatterPlot':
                 {
-                    //TODO: remove copypaste
-                    let graphDiv = document.getElementById('sigPlot');
-                    replot(graphDiv, message.yScale, message.xScale);
+                    replot(plot, message.yScale, message.xScale);
                     break;
                 }
 
             case 'spectrumPlot':
                 {
-                    let graphDiv = document.getElementById('specPlot');
-                    replot(graphDiv, message.yScale, message.xScale);
+                    replot(plot, message.yScale, message.xScale);
+                    break;
+                }
+
+            case 'setMemoryMode':
+                {
+                    updateMemoryMode(message);
                     break;
                 }
         }

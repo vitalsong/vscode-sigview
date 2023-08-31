@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { WindowType, SpectrumFormat } from './utils';
+import { DataType, Endian } from './memory';
 
 export interface MemViewTracker {
     onReplotSignal?(): void;
@@ -29,6 +30,8 @@ export class MemArrayParam {
     arrName: string = "";
     arrLength: number = 0;
     plotParam: SpectrumParam | SignalParam = new SignalParam();
+    dataType: DataType | undefined;
+    dataEndian: Endian | undefined;
 };
 
 
@@ -114,7 +117,9 @@ export class MemViewPanel {
                         {
                             arrName: message.arrayName,
                             arrLength: Number(message.arrayLength),
-                            plotParam: param
+                            plotParam: param,
+                            dataType: message.memParam?.dataType as DataType,
+                            dataEndian: message.memParam?.dataEndian as Endian,
                         };
                         this._tracker?.onReplotSignal?.();
                         return;
@@ -148,12 +153,16 @@ export class MemViewPanel {
         }
     }
 
-    async plotSignal(yScale: Float32Array, xScale: Float32Array) {
+    async plotSignal(yScale: Float64Array, xScale: Float64Array) {
         await this._panel.webview.postMessage({ command: 'scatterPlot', yScale: yScale, xScale: xScale });
     }
 
-    async plotSpectrum(yScale: Float32Array, xScale: Float32Array) {
+    async plotSpectrum(yScale: Float64Array, xScale: Float64Array) {
         await this._panel.webview.postMessage({ command: 'spectrumPlot', yScale: yScale, xScale: xScale });
+    }
+
+    async setMemoryMode(enabled: boolean = true, type: DataType | undefined = undefined, endian: Endian | undefined = undefined) {
+        await this._panel.webview.postMessage({ command: 'setMemoryMode', enabled: enabled, type: type, endian: endian });
     }
 
     private _update() {

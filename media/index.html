@@ -2,6 +2,26 @@
     <div class="row">
         <div class="block">array: <input id="arrayName"></div>
         <div class="block">length: <input id="arrayLength"></div>
+        <div id="dataTypeBlock" class="block">
+            type:
+            <select id="dataType">
+                <option>float32</option>
+                <option>float64</option>
+                <option>int8</option>
+                <option>uint8</option>
+                <option>int16</option>
+                <option>uint16</option>
+                <option>int32</option>
+                <option>uint32</option>
+            </select>
+        </div>
+        <div id="dataEndianBlock" class="block">
+            endian:
+            <select id="dataEndian">
+                <option>little</option>
+                <option>big</option>
+            </select>
+        </div>
     </div>
 
     <hr>
@@ -17,7 +37,6 @@
     <hr>
 
     <div id="sigTab" class="tabcontent" style="width:100%">
-        <div id="sigPlot" style="height:250px"></div>
     </div>
 
     <div id="specTab" class="tabcontent" style="width:100%">
@@ -29,6 +48,8 @@
                         <option>Hann</option>
                         <option>Hamming</option>
                         <option>Sinus</option>
+                        <option>Rectangle</option>
+                        <option>Blackman</option>
                     </select>
                 </div>
                 <div class="block">
@@ -43,6 +64,9 @@
                 <div class="block">full scale: <input id="specFullScale" value="1.0"></div>
             </div>
         </div>
-        <div id="specPlot" style="height:250px"></div>
+    </div>
+
+    <div id="plotTab" class="tabcontent" style="width:100%;display:block">
+        <div id="sigPlot" style="height:250px"></div>
     </div>
 </div>

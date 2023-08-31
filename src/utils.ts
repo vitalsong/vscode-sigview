@@ -7,19 +7,21 @@ export enum SpectrumFormat {
 }
 
 export enum WindowType {
+    rectangle = "rectangle",
     hamming = "hamming",
     hann = "hann",
-    sinus = "sinus"
+    sinus = "sinus",
+    blackman = "blackman",
 }
 
-export function getFreqArray(numFreqs: number, sampleRate: number = 1.0, halfSpec: boolean = true): Float32Array {
+export function getFreqArray(numFreqs: number, sampleRate: number = 1.0, halfSpec: boolean = true): Float64Array {
     let fftLen = numFreqs;
     if (halfSpec) {
         fftLen = nextpow2size((numFreqs - 1) * 2);
     }
 
     const dfreq = (sampleRate / fftLen);
-    let freqs = new Float32Array(numFreqs);
+    let freqs = new Float64Array(numFreqs);
     for (let i = 0; i < freqs.length; i++) {
         freqs[i] = i * dfreq;
     }
@@ -27,14 +29,22 @@ export function getFreqArray(numFreqs: number, sampleRate: number = 1.0, halfSpe
 }
 
 function calcWindow(n: number, winType: WindowType = WindowType.hamming) {
-    let win = new Float32Array(n);
+    let win = new Float64Array(n);
     switch (winType) {
+        case WindowType.rectangle: {
+            for (let i = 0; i < n; i++) {
+                win[i] = 1.0;
+            }
+            break;
+        }
+
         case WindowType.hann: {
             for (let i = 0; i < n; i++) {
                 win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1));
             }
             break;
         }
+
         case WindowType.hamming: {
             for (let i = 0; i < n; i++) {
                 win[i] = 0.54 - 0.46 * Math.cos((2 * Math.PI * i) / (n - 1));
@@ -45,6 +55,13 @@ function calcWindow(n: number, winType: WindowType = WindowType.hamming) {
         case WindowType.sinus: {
             for (let i = 0; i < n; i++) {
                 win[i] = Math.sin((Math.PI * i) / (n - 1));
+            }
+            break;
+        }
+
+        case WindowType.blackman: {
+            for (let i = 0; i < n; i++) {
+                win[i] = 0.42 - 0.5 * Math.cos((2 * Math.PI * i) / (n - 1)) + 0.08 * Math.cos((4 * Math.PI * i) / (n - 1));
             }
             break;
         }
@@ -76,14 +93,14 @@ function nextpow2size(n: number) {
 }
 
 //TODO: base type Float64
-export function calcSpectrum(sig: Float32Array, specType: SpectrumFormat = SpectrumFormat.db, winType: WindowType = WindowType.hamming, fullScale: number = 1.0): Float32Array {
+export function calcSpectrum(sig: Float64Array, specType: SpectrumFormat = SpectrumFormat.db, winType: WindowType = WindowType.hamming, fullScale: number = 1.0): Float64Array {
     let FFT = ML_FFT.FFT;
     const n = sig.length;
     const nfft = nextpow2size(n);
     const win = calcWindow(n, winType);
     FFT.init(nfft);
-    let re = new Float32Array(nfft);
-    let im = new Float32Array(nfft);
+    let re = new Float64Array(nfft);
+    let im = new Float64Array(nfft);
     for (let i = 0; i < n; i++) {
         re[i] = sig[i] * win[i];
         im[i] = 0;
@@ -91,9 +108,11 @@ export function calcSpectrum(sig: Float32Array, specType: SpectrumFormat = Spect
 
     FFT.fft(re, im);
 
-    let spec = new Float32Array(nfft / 2 + 1);
+    let spec = new Float64Array(nfft / 2 + 1);
     for (let i = 0; i < spec.length; i++) {
-        spec[i] = ((re[i] * re[i]) + (im[i] * im[i])) / nfft;
+        re[i] = re[i] / (nfft / 2);
+        im[i] = im[i] / (nfft / 2);
+        spec[i] = ((re[i] * re[i]) + (im[i] * im[i]));
     }
 
     switch (specType) {
@@ -105,8 +124,9 @@ export function calcSpectrum(sig: Float32Array, specType: SpectrumFormat = Spect
         }
 
         case SpectrumFormat.db: {
+            const scale = fullScale * fullScale;
             for (let i = 0; i < spec.length; i++) {
-                spec[i] = 10 * Math.log10(spec[i] / (fullScale * fullScale));
+                spec[i] = 10 * Math.log10(spec[i] / scale);
             }
             break;
         }
