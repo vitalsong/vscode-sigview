@@ -120,12 +120,22 @@ async function readFromScope(session: vscode.DebugSession, varRef: number, start
 	return array;
 }
 
+function filterVariable(variables: any, name: string): DebugProtocol.Variable | undefined {
+	const filtered = variables.filter((v: { name: string; }) => {
+		return v.name === name;
+	});
+	if (filtered.length === 1) {
+		return filtered[0];
+	}
+}
+
 async function findVariable(session: vscode.DebugSession, name: string): Promise<DebugProtocol.Variable | undefined> {
 	if (!session) {
 		return;
 	}
 
 	//TODO: select true thread/stack
+	//TODO: don't request session and variables every time
 	const threads = await session.customRequest('threads');
 	const threadId = threads.threads[0]['id'];
 
@@ -136,13 +146,23 @@ async function findVariable(session: vscode.DebugSession, name: string): Promise
 	const localVarsRef = scopes.scopes[0].variablesReference;
 
 	let variables = await session.customRequest('variables', { variablesReference: localVarsRef });
-	let localVar = undefined;
-	while ((localVar === undefined) || (localVar.evaluateName !== name)) {
-		localVar = variables.variables.filter((v: { evaluateName: string; }) => {
-			return name.includes(v.evaluateName);
-		})[0];
+
+	//find unique variable name in scope
+	let localVar = filterVariable(variables.variables, name);
+	if (localVar) {
+		return localVar;
+	}
+
+	const varpath = name.split(".");
+	for (let i = 0; i < varpath.length; ++i) {
+		const path = varpath[i];
+		localVar = filterVariable(variables.variables, path);
+		if (!localVar) {
+			return undefined;
+		}
 		variables = await session.customRequest('variables', { variablesReference: localVar.variablesReference });
 	}
+
 	return localVar;
 }
 
