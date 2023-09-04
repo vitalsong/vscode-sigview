@@ -10,7 +10,8 @@ Visual Studio Code extension for viewing signals in debug mode
 - Spectrum plot;
 - Update for each step of the debugger;
 - Access to nested objects (example obj1._data._array);
-- Read and view memory by pointer (experimental for `C/C++`);
+- Read and view memory by address/pointer (experimental for `C/C++`);
+- Caching scope variables;
 - Works via `vscode.DebugSession` (those. most languages ​​should be supported);
 
 ## Install

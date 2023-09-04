@@ -2,7 +2,7 @@
   "name": "sigview",
   "displayName": "Signal View",
   "description": "Visual Studio Code extension for viewing signals in debug mode",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "repository": {
     "type": "git",
     "url": "https://github.com/vitalsong/vscode-sigview"

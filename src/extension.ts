@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { MemViewPanel, MemViewTracker, MemArrayParam, PlotType, SpectrumParam, SignalParam } from './panel';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import { calcSpectrum, getFreqArray } from './utils';
-import { DataType, Endian, extractArray, memorySize } from './memory';
+import { DataType, Endian, memorySize, MemoryBlock } from './memory';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -85,41 +85,6 @@ function pointerType(variable: DebugProtocol.Variable): DataType | undefined {
 	}
 }
 
-async function readFromMemory(session: vscode.DebugSession, address: string, type: DataType, count: number, endian: Endian = Endian.little): Promise<Float64Array> {
-	const numBytes = memorySize(count, type);
-	const resp = await session.customRequest('readMemory', { memoryReference: address, count: numBytes });
-	const base64Str = resp['data'];
-	const u8arr = Uint8Array.from(atob(base64Str), c => c.charCodeAt(0));
-	const array = extractArray(u8arr, type, endian);
-	return array;
-}
-
-async function readFromScope(session: vscode.DebugSession, varRef: number, start: number, count: number): Promise<Float64Array | undefined> {
-	const args = {
-		variablesReference: varRef,
-		// TODO: check supportsVariablePaging
-		// filter: 'indexed',
-		// start: start,
-		// count: count
-	};
-
-	const resp = await session.customRequest('variables', args);
-
-	//filter '[index]' elements
-	let variables = resp.variables.filter((v: { name: string; }) => {
-		const value = Number(v.name.slice(1, -1));
-		return !Number.isNaN(value);
-	});
-
-	if (variables.length < (start + count)) {
-		return undefined;
-	}
-
-	variables = variables.slice(start, start + count);
-	const array = Float64Array.from(variables, (x: any) => x.value);
-	return array;
-}
-
 function filterVariable(variables: any, name: string): DebugProtocol.Variable | undefined {
 	const filtered = variables.filter((v: { name: string; }) => {
 		return v.name === name;
@@ -127,6 +92,11 @@ function filterVariable(variables: any, name: string): DebugProtocol.Variable | 
 	if (filtered.length === 1) {
 		return filtered[0];
 	}
+}
+
+function isMemoryAddress(value: string) {
+	const addresRe = new RegExp('0x[0-9A-F]{4,}');
+	return addresRe.test(value);
 }
 
 async function findVariable(session: vscode.DebugSession, name: string): Promise<DebugProtocol.Variable | undefined> {
@@ -160,40 +130,68 @@ async function findVariable(session: vscode.DebugSession, name: string): Promise
 		if (!localVar) {
 			return undefined;
 		}
-		variables = await session.customRequest('variables', { variablesReference: localVar.variablesReference });
+
+		//ignore last variables
+		if (i < varpath.length - 1) {
+			variables = await session.customRequest('variables', { variablesReference: localVar.variablesReference });
+		}
 	}
 
 	return localVar;
 }
 
-async function getArray(session: vscode.DebugSession, param: MemArrayParam): Promise<DebugArray | undefined> {
-	let variable = await findVariable(session, param.arrName);
+class ScopeArray {
+	name: string;
+	array: Float64Array;
+
+	constructor(name: string, array: Float64Array) {
+		this.name = name;
+		this.array = array;
+	}
+};
+
+class MemoryArray {
+	name: string;
+	array: Float64Array;
+	type: DataType;
+	endian: Endian;
+
+	constructor(name: string, array: Float64Array, type: DataType, endian: Endian) {
+		this.name = name;
+		this.array = array;
+		this.type = type;
+		this.endian = endian;
+	}
+};
+
+type DebugArray = ScopeArray | MemoryArray;
+
+async function getScopeArray(session: vscode.DebugSession, name: string): Promise<Float64Array | undefined> {
+	let variable = await findVariable(session, name);
 	if (!variable) {
 		console.debug('variable is not exist');
 		return;
 	}
 
-	const arrLength = param.arrLength;
-	if (!isPointerVariable(variable)) {
-		const sigArray = await readFromScope(session, variable.variablesReference, 0, arrLength);
-		return { array: sigArray, type: undefined, endian: undefined };
-	}
+	// TODO: check supportsVariablePaging
+	const resp = await session.customRequest('variables', { variablesReference: variable.variablesReference });
 
-	//TODO: use gdb/lldb customRequest
-	const address = await pointerAddress(session, variable);
+	//filter '[index]' elements
+	let variables = resp.variables.filter((v: { name: string; }) => {
+		const value = Number(v.name.slice(1, -1));
+		return !Number.isNaN(value);
+	});
 
-	//update data type
-	let dataType = param.dataType;
-	dataType ??= pointerType(variable);
-	dataType ??= DataType.int8;
+	const array = Float64Array.from(variables, (x: any) => x.value);
+	return array;
+}
 
-	//update endian
-	//TODO: get info from system
-	let dataEndian = param.dataEndian;
-	dataEndian ??= Endian.little;
-
-	const sigArray = await readFromMemory(session, address, dataType, arrLength, dataEndian);
-	return { array: sigArray, type: dataType, endian: dataEndian };
+async function getMemoryBlock(session: vscode.DebugSession, address: string, numBytes: number): Promise<MemoryBlock | undefined> {
+	const resp = await session.customRequest('readMemory', { memoryReference: address, count: numBytes });
+	const base64Str = resp['data'];
+	const u8arr = Uint8Array.from(atob(base64Str), c => c.charCodeAt(0));
+	let result = new MemoryBlock(Number(address), u8arr);
+	return result;
 }
 
 function isEvent(message: DebugProtocol.ProtocolMessage): message is DebugProtocol.Event {
@@ -212,18 +210,16 @@ function isSignalParam(param: SpectrumParam | SignalParam): param is SignalParam
 	return param.type === PlotType.signal;
 }
 
-class DebugArray {
-	array: Float64Array | undefined;
-	type: DataType | undefined;
-	endian: Endian | undefined;
-}
+type ScopeArrayCache = {
+	[name: string]: Float64Array;
+};
 
 class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 
 	private _panel: MemViewPanel | undefined;
 	private _initParam: any | undefined;
 	private _prevArray: string | undefined;
-
+	private _arrayCache: ScopeArrayCache = {};
 	public static currentAdapter: TestDebugAdapter | undefined;
 
 	public setViewPanel(panel: MemViewPanel) {
@@ -236,13 +232,64 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 			return;
 		}
 
-		if (!debugArray.type) {
-			this._panel.setMemoryMode(false);
-		} else {
-			const oldParam = this._panel.getPageParam();
-			if (!oldParam.dataType) {
+		if (debugArray instanceof MemoryArray) {
+			const currentParam = this._panel.getPageParam();
+			if (!currentParam.dataType) {
 				this._panel.setMemoryMode(true, debugArray.type, debugArray.endian);
 			}
+		} else {
+			this._panel.setMemoryMode(false);
+		}
+	}
+
+	private async getMemoryArray(session: vscode.DebugSession, address: string, length: number, dataType: DataType, dataEndian: Endian): Promise<MemoryArray | undefined> {
+		const numBytes = memorySize(length, dataType);
+		const memBlock = await getMemoryBlock(session, address, numBytes);
+		if (!memBlock) {
+			return;
+		}
+		const array = memBlock.toArray(dataType, dataEndian);
+		return new MemoryArray(address, array, dataType, dataEndian);
+	}
+
+	private async getDebugArray(session: vscode.DebugSession, pageParam: Readonly<MemArrayParam>): Promise<DebugArray | undefined> {
+
+		if (isMemoryAddress(pageParam.arrName)) {
+			let dataType = pageParam.dataType;
+			let dataEndian = pageParam.dataEndian;
+			dataType ??= DataType.uint8;
+			dataEndian ??= Endian.little;
+			const array = await this.getMemoryArray(session, pageParam.arrName, pageParam.arrLength, dataType, dataEndian);
+			return array;
+		}
+
+		let variable = await findVariable(session, pageParam.arrName);
+		if (!variable) {
+			return;
+		}
+
+		if (isPointerVariable(variable)) {
+			let dataType = pageParam.dataType;
+			let dataEndian = pageParam.dataEndian;
+			dataType ??= pointerType(variable);
+			dataType ??= DataType.uint8;
+			dataEndian ??= Endian.little;
+			const address = await pointerAddress(session, variable);
+			if (!address) {
+				return;
+			}
+			const array = await this.getMemoryArray(session, address, pageParam.arrLength, dataType, dataEndian);
+			return array;
+		} else {
+			if (!(pageParam.arrName in this._arrayCache)) {
+				const array = await getScopeArray(session, pageParam.arrName);
+				if (!array) {
+					return;
+				}
+				this._arrayCache[pageParam.arrName] = array;
+			}
+			const array = this._arrayCache[pageParam.arrName];
+			return new ScopeArray(pageParam.arrName, array.slice(0, pageParam.arrLength));
 		}
 	}
 
@@ -260,34 +307,31 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 		}
 
 		try {
-			let pageParam = this._panel.getPageParam();
-			let sigArray = new Float64Array(0);
-
 			//reset param if array changed
 			//this is needed to ignore values ​​from the GUI
+			let pageParam = this._panel.getPageParam();
 			if (this._prevArray !== pageParam.arrName) {
 				pageParam.dataType = undefined;
 				pageParam.dataEndian = undefined;
 				this._prevArray = pageParam.arrName;
 			}
 
-			let debugArray = await getArray(session, pageParam);
-			if (debugArray) {
-				this.checkMemoryMode(debugArray);
-				if (debugArray.array) {
-					sigArray = debugArray.array;
-				}
+			let debugArray = await this.getDebugArray(session, pageParam);
+			if (!debugArray) {
+				debugArray = new ScopeArray(pageParam.arrName, new Float64Array(0));
 			}
 
-			//TODO: cache result if signal not changed
+			this.checkMemoryMode(debugArray);
+
 			const plotParam = pageParam.plotParam;
+
 			if (isSignalParam(plotParam)) {
-				const times = Float64Array.from(Array(sigArray.length).keys());
-				await this._panel.plotSignal(sigArray, times);
+				const times = Float64Array.from(Array(debugArray.array.length).keys());
+				await this._panel.plotSignal(debugArray.array, times);
 			}
 
 			if (isSpectrumParam(plotParam)) {
-				const spec = calcSpectrum(sigArray, plotParam.ampScale, plotParam.windowType, plotParam.fullScale);
+				const spec = calcSpectrum(debugArray.array, plotParam.ampScale, plotParam.windowType, plotParam.fullScale);
 				const freqs = getFreqArray(spec.length, plotParam.sampleRate);
 				await this._panel.plotSpectrum(spec, freqs);
 			}
@@ -308,10 +352,17 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 
 		if (isEvent(message)) {
 			if (message.event === "stopped" && message.body) {
+				//reset the cache, because there is no guarantee that the data is not named
+				this.clearCache();
+
 				//update for each debugger step
 				await this.updateView();
 			}
 		}
+	}
+
+	public clearCache() {
+		this._arrayCache = {};
 	}
 
 	async onReplotSignal() {

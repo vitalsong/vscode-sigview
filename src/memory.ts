@@ -114,14 +114,37 @@ export function memorySize(count: number, type: DataType) {
     return count * TYPE_SIZE[type];
 }
 
-export function extractArray(u8arr: Uint8Array, type: DataType, endian: Endian = Endian.little): Float64Array {
-    const buf = new ArrayBuffer(u8arr.length);
-    const u8view = new DataView(buf);
-    for (let i = 0; i < u8arr.length; i++) {
-        u8view.setUint8(i, u8arr[i]);
+export class MemoryBlock {
+
+    private _address: number;
+    private _data: Uint8Array;
+
+    constructor(address: number, data: Uint8Array) {
+        this._address = address;
+        this._data = data;
     }
-    const count = u8arr.length / TYPE_SIZE[type];
-    const tarr = castBuffer(u8view, count, type, endian);
-    const result = Float64Array.from(tarr);
-    return result;
-}
+
+    public address(): number {
+        return this._address;
+    }
+
+    public size(): number {
+        return this._data.length;
+    }
+
+    public data(): Uint8Array {
+        return this._data;
+    }
+
+    public toArray(type: DataType, endian: Endian = Endian.little): Float64Array {
+        const buf = new ArrayBuffer(this._data.length);
+        const u8view = new DataView(buf);
+        for (let i = 0; i < this._data.length; i++) {
+            u8view.setUint8(i, this._data[i]);
+        }
+        const count = this._data.length / TYPE_SIZE[type];
+        const tarr = castBuffer(u8view, count, type, endian);
+        const result = Float64Array.from(tarr);
+        return result;
+    }
+};
