@@ -8,6 +8,7 @@ Visual Studio Code extension for viewing signals in debug mode
 
 - Time domain plot;
 - Spectrum plot;
+- Real/Complex signal;
 - Update for each step of the debugger;
 - Access to nested objects (example obj1._data._array);
 - Read and view memory by address/pointer (experimental for `C/C++`);

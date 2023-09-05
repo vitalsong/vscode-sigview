@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { MemViewPanel, MemViewTracker, MemArrayParam, PlotType, SpectrumParam, SignalParam } from './panel';
+import { MemViewPanel, MemViewTracker, MemArrayParam, PlotType, SpectrumParam, SignalParam, SignalType, ExtPlotType, PlotData } from './panel';
 import { DebugProtocol } from '@vscode/debugprotocol';
-import { calcSpectrum, getFreqArray } from './utils';
+import { calcSpectrum, RealArray, ComplexArray } from './utils';
 import { DataType, Endian, memorySize, MemoryBlock } from './memory';
 
 // This method is called when your extension is activated
@@ -252,20 +252,26 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 		return new MemoryArray(address, array, dataType, dataEndian);
 	}
 
-	private async getDebugArray(session: vscode.DebugSession, pageParam: Readonly<MemArrayParam>): Promise<DebugArray | undefined> {
+	private async getDebugArray(session: vscode.DebugSession, pageParam: Readonly<MemArrayParam>, isComplex: boolean = false): Promise<DebugArray | undefined> {
+		let length = pageParam.arrLength;
+
+		//TODO: find re/im or [0]/[1] sub-elements
+		if (isComplex) {
+			length *= 2;
+		}
 
 		if (isMemoryAddress(pageParam.arrName)) {
 			let dataType = pageParam.dataType;
 			let dataEndian = pageParam.dataEndian;
 			dataType ??= DataType.uint8;
 			dataEndian ??= Endian.little;
-			const array = await this.getMemoryArray(session, pageParam.arrName, pageParam.arrLength, dataType, dataEndian);
+			const array = await this.getMemoryArray(session, pageParam.arrName, length, dataType, dataEndian);
 			return array;
 		}
 
 		let variable = await findVariable(session, pageParam.arrName);
 		if (!variable) {
-			return;
+			throw new Error(`could not find variable ${pageParam.arrName}`);
 		}
 
 		if (isPointerVariable(variable)) {
@@ -276,20 +282,20 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 			dataEndian ??= Endian.little;
 			const address = await pointerAddress(session, variable);
 			if (!address) {
-				return;
+				throw new Error(`error getting address by pointer`);
 			}
-			const array = await this.getMemoryArray(session, address, pageParam.arrLength, dataType, dataEndian);
+			const array = await this.getMemoryArray(session, address, length, dataType, dataEndian);
 			return array;
 		} else {
 			if (!(pageParam.arrName in this._arrayCache)) {
 				const array = await getScopeArray(session, pageParam.arrName);
 				if (!array) {
-					return;
+					throw new Error(`failed to load scope variable ${pageParam.arrName}`);
 				}
 				this._arrayCache[pageParam.arrName] = array;
 			}
 			const array = this._arrayCache[pageParam.arrName];
-			return new ScopeArray(pageParam.arrName, array.slice(0, pageParam.arrLength));
+			return new ScopeArray(pageParam.arrName, array.slice(0, length));
 		}
 	}
 
@@ -309,14 +315,16 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 		try {
 			//reset param if array changed
 			//this is needed to ignore values ​​from the GUI
-			let pageParam = this._panel.getPageParam();
+			let pageParam = new MemArrayParam();
+			pageParam = this._panel.getPageParam();
 			if (this._prevArray !== pageParam.arrName) {
 				pageParam.dataType = undefined;
 				pageParam.dataEndian = undefined;
 				this._prevArray = pageParam.arrName;
 			}
 
-			let debugArray = await this.getDebugArray(session, pageParam);
+			const isComplex = (pageParam.signalType === SignalType.complex);
+			let debugArray = await this.getDebugArray(session, pageParam, isComplex);
 			if (!debugArray) {
 				debugArray = new ScopeArray(pageParam.arrName, new Float64Array(0));
 			}
@@ -325,19 +333,63 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 
 			const plotParam = pageParam.plotParam;
 
+			let plotData = new Array<PlotData>;
+
 			if (isSignalParam(plotParam)) {
-				const times = Float64Array.from(Array(debugArray.array.length).keys());
-				await this._panel.plotSignal(debugArray.array, times);
+				if (!isComplex) {
+					const xScale = Float64Array.from(Array(debugArray.array.length).keys());
+					plotData = [new PlotData(xScale, debugArray.array)];
+				} else {
+					const cmplxArray = new ComplexArray(debugArray.array);
+					const xScale = Float64Array.from(Array(cmplxArray.size()).keys());
+					switch (plotParam.ext) {
+						case ExtPlotType.real:
+							plotData = [new PlotData(xScale, cmplxArray.real())];
+							break;
+
+						case ExtPlotType.imag:
+							plotData = [new PlotData(xScale, cmplxArray.imag())];
+							break;
+
+						case ExtPlotType.abs:
+							plotData = [new PlotData(xScale, cmplxArray.abs())];
+							break;
+
+
+						case ExtPlotType.phase:
+							plotData = [new PlotData(xScale, cmplxArray.phase())];
+							break;
+
+						case ExtPlotType.reim:
+							const real = new PlotData(xScale, cmplxArray.real(), "re");
+							const imag = new PlotData(xScale, cmplxArray.imag(), "im");
+							plotData = [real, imag];
+							break;
+
+						default:
+							break;
+					}
+				}
 			}
 
 			if (isSpectrumParam(plotParam)) {
-				const spec = calcSpectrum(debugArray.array, plotParam.ampScale, plotParam.windowType, plotParam.fullScale);
-				const freqs = getFreqArray(spec.length, plotParam.sampleRate);
-				await this._panel.plotSpectrum(spec, freqs);
+				if (!isComplex) {
+					const array = new RealArray(debugArray.array);
+					const res = calcSpectrum(array, plotParam.ampScale, plotParam.windowType, plotParam.fullScale);
+					plotData = [new PlotData(res.freqs.map(x => x * plotParam.sampleRate), res.amps)];
+				} else {
+					const array = new ComplexArray(debugArray.array);
+					const res = calcSpectrum(array, plotParam.ampScale, plotParam.windowType, plotParam.fullScale);
+					plotData = [new PlotData(res.freqs.map(x => x * plotParam.sampleRate), res.amps)];
+				}
 			}
 
+			await this._panel.updatePlot(plotData);
+
 		} catch (error) {
-			console.debug(`Update SigViewPanel error: ${error}`);
+			if (this._panel) {
+				this._panel.setErrorMessage(String(error));
+			}
 		}
 	}
 

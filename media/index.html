@@ -24,49 +24,72 @@
         </div>
     </div>
 
+    <div class="row">
+        <div class="block">
+            type:
+            <select id="signalType">
+                <option>real</option>
+                <option>complex</option>
+            </select>
+        </div>
+    </div>
+
     <hr>
 
     <div class="block">
         plot:
         <select id="plotType">
-            <option>Signal</option>
-            <option>Spectrum</option>
+            <option>signal</option>
+            <option>spectrum</option>
         </select>
     </div>
 
     <hr>
 
     <div id="sigTab" class="tabcontent" style="width:100%">
+        <div class="row">
+            <div id="complexModeBlock" class="block">
+                mode:
+                <!-- TODO: move to signal plot params -->
+                <select id="complexMode" class="block">
+                    <option>real/imag</option>
+                    <option>real</option>
+                    <option>imag</option>
+                    <option>abs</option>
+                    <option>phase</option>
+                </select>
+            </div>
+        </div>
     </div>
 
     <div id="specTab" class="tabcontent" style="width:100%">
-        <div>
-            <div class="row">
-                <div class="block">
-                    window:
-                    <select id="specWinType">
-                        <option>Hann</option>
-                        <option>Hamming</option>
-                        <option>Sinus</option>
-                        <option>Rectangle</option>
-                        <option>Blackman</option>
-                    </select>
-                </div>
-                <div class="block">
-                    amplitude:
-                    <select id="specAmpUnits">
-                        <option>dB</option>
-                        <option>mag</option>
-                        <option>pow</option>
-                    </select>
-                </div>
-                <div class="block">sample rate: <input id="specSampleRate" value="1.0"></div>
-                <div class="block">full scale: <input id="specFullScale" value="1.0"></div>
+        <div class="row">
+            <div class="block">
+                window:
+                <select id="specWinType">
+                    <option>Hann</option>
+                    <option>Hamming</option>
+                    <option>Sinus</option>
+                    <option>Rectangle</option>
+                    <option>Blackman</option>
+                </select>
             </div>
+            <div class="block">
+                amplitude:
+                <select id="specAmpUnits">
+                    <option>dB</option>
+                    <option>mag</option>
+                    <option>pow</option>
+                </select>
+            </div>
+            <div class="block">sample rate: <input id="specSampleRate" value="1.0"></div>
+            <div class="block">full scale: <input id="specFullScale" value="1.0"></div>
         </div>
     </div>
 
     <div id="plotTab" class="tabcontent" style="width:100%;display:block">
         <div id="sigPlot" style="height:250px"></div>
     </div>
+
+    <p id="errorMessage"></p>
 </div>

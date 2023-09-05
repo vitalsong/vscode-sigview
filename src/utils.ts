@@ -14,20 +14,6 @@ export enum WindowType {
     blackman = "blackman",
 }
 
-export function getFreqArray(numFreqs: number, sampleRate: number = 1.0, halfSpec: boolean = true): Float64Array {
-    let fftLen = numFreqs;
-    if (halfSpec) {
-        fftLen = nextpow2size((numFreqs - 1) * 2);
-    }
-
-    const dfreq = (sampleRate / fftLen);
-    let freqs = new Float64Array(numFreqs);
-    for (let i = 0; i < freqs.length; i++) {
-        freqs[i] = i * dfreq;
-    }
-    return freqs;
-}
-
 function calcWindow(n: number, winType: WindowType = WindowType.hamming) {
     let win = new Float64Array(n);
     switch (winType) {
@@ -92,26 +78,103 @@ function nextpow2size(n: number) {
     return Math.pow(2, p);
 }
 
+export class RealArray {
+    constructor(array: Float64Array) {
+        this.array = array;
+    }
+    public size() {
+        return this.array.length;
+    }
+    array: Float64Array;
+}
+
+export class ComplexArray {
+    constructor(array: Float64Array) {
+        this.array = array;
+    }
+    public size() {
+        return (this.array.length / 2);
+    }
+
+    public real(): Float64Array {
+        let res = new Float64Array(this.size());
+        for (let i = 0; i < res.length; ++i) {
+            res[i] = this.array[2 * i];
+        }
+        return res;
+    }
+
+    public imag(): Float64Array {
+        let res = new Float64Array(this.size());
+        for (let i = 0; i < res.length; ++i) {
+            res[i] = this.array[2 * i + 1];
+        }
+        return res;
+    }
+
+    public abs(): Float64Array {
+        let res = new Float64Array(this.size());
+        for (let i = 0; i < res.length; ++i) {
+            const re = this.array[2 * i];
+            const im = this.array[2 * i + 1];
+            res[i] = Math.sqrt((re * re) + (im * im));
+        }
+        return res;
+    }
+
+    public phase(): Float64Array {
+        //TODO: unwrap
+        let res = new Float64Array(this.size());
+        for (let i = 0; i < res.length; ++i) {
+            const re = this.array[2 * i];
+            const im = this.array[2 * i + 1];
+            res[i] = Math.atan2(re, im);
+        }
+        return res;
+    }
+
+    array: Float64Array;
+}
+
+export class SpectrumResult {
+    constructor(amps: Float64Array, freqs: Float64Array) {
+        this.amps = amps;
+        this.freqs = freqs;
+    }
+    amps: Float64Array;
+    freqs: Float64Array;
+}
+
 //TODO: base type Float64
-export function calcSpectrum(sig: Float64Array, specType: SpectrumFormat = SpectrumFormat.db, winType: WindowType = WindowType.hamming, fullScale: number = 1.0): Float64Array {
+export function calcSpectrum(sig: Readonly<RealArray | ComplexArray>, specType: SpectrumFormat = SpectrumFormat.db, winType: WindowType = WindowType.hamming, fullScale: number = 1.0): SpectrumResult {
     let FFT = ML_FFT.FFT;
-    const n = sig.length;
+    const n = sig.size();
     const nfft = nextpow2size(n);
     const win = calcWindow(n, winType);
+
     FFT.init(nfft);
+
     let re = new Float64Array(nfft);
     let im = new Float64Array(nfft);
-    for (let i = 0; i < n; i++) {
-        re[i] = sig[i] * win[i];
-        im[i] = 0;
+    let fftDiv: number = nfft;
+    let specSize: number = nfft;
+    if (sig instanceof RealArray) {
+        re = sig.array;
+        fftDiv = nfft / 2;
+        specSize = nfft / 2 + 1;
+    } else if (sig instanceof ComplexArray) {
+        for (let i = 0; i < n; i++) {
+            re[i] = sig.array[2 * i] * win[i];
+            im[i] = sig.array[2 * i + 1] * win[i];
+        }
     }
 
     FFT.fft(re, im);
 
-    let spec = new Float64Array(nfft / 2 + 1);
+    let spec = new Float64Array(specSize);
     for (let i = 0; i < spec.length; i++) {
-        re[i] = re[i] / (nfft / 2);
-        im[i] = im[i] / (nfft / 2);
+        re[i] = re[i] / fftDiv;
+        im[i] = im[i] / fftDiv;
         spec[i] = ((re[i] * re[i]) + (im[i] * im[i]));
     }
 
@@ -136,5 +199,24 @@ export function calcSpectrum(sig: Float64Array, specType: SpectrumFormat = Spect
             break;
     }
 
-    return spec;
+    let freqs = new Float64Array(specSize);
+    const dfreq = (1.0 / nfft);
+    if (sig instanceof RealArray) {
+        for (let i = 0; i < freqs.length; i++) {
+            freqs[i] = i * dfreq;
+        }
+    } else {
+        let cspec = new Float64Array(nfft);
+        for (let i = 0; i < nfft / 2; i++) {
+            freqs[i] = (i - nfft / 2) * dfreq;
+            cspec[i] = spec[nfft / 2 + i];
+        }
+        for (let i = nfft / 2; i < nfft; i++) {
+            freqs[i] = (i - nfft / 2) * dfreq;
+            cspec[i] = spec[i - nfft / 2];
+        }
+        spec = cspec;
+    }
+
+    return new SpectrumResult(spec, freqs);
 }

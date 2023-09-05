@@ -10,7 +10,20 @@ export interface MemViewTracker {
 
 export enum PlotType {
     signal = "signal",
-    spectrum = "spectrum"
+    spectrum = "spectrum",
+}
+
+export enum ExtPlotType {
+    reim = "real/imag",
+    real = "real",
+    imag = "imag",
+    abs = "abs",
+    phase = "phase",
+}
+
+export enum SignalType {
+    real = "real",
+    complex = "complex"
 }
 
 export class SpectrumParam {
@@ -23,7 +36,7 @@ export class SpectrumParam {
 
 export class SignalParam {
     type: PlotType = PlotType.signal;
-    //...
+    ext: ExtPlotType = ExtPlotType.real;
 }
 
 export class MemArrayParam {
@@ -32,7 +45,19 @@ export class MemArrayParam {
     plotParam: SpectrumParam | SignalParam = new SignalParam();
     dataType: DataType | undefined;
     dataEndian: Endian | undefined;
+    signalType: SignalType = SignalType.real;
 };
+
+export class PlotData {
+    constructor(x: Float64Array, y: Float64Array, name: string = "") {
+        this.xScale = x;
+        this.yScale = y;
+        this.name = name;
+    }
+    xScale: Float64Array | undefined;
+    yScale: Float64Array | undefined;
+    name: string | undefined;
+}
 
 
 //TODO: hide 'type' section if variable is not address, like 0xffffffff
@@ -102,21 +127,26 @@ export class MemViewPanel {
             message => {
                 switch (message.command) {
                     case 'changedParam': {
+                        let param = undefined;
                         const plotType = String(message.plotType).toLowerCase() as PlotType;
-                        let param = new SignalParam();
                         if (plotType === PlotType.spectrum) {
                             let specParam = new SpectrumParam();
-                            specParam.fullScale = Number(message.specParam.fullScale);
-                            specParam.sampleRate = Number(message.specParam.sampleRate);
-                            specParam.windowType = String(message.specParam.windowType).toLowerCase() as WindowType;
-                            specParam.ampScale = String(message.specParam.ampScale).toLowerCase() as SpectrumFormat;
+                            specParam.fullScale = Number(message.plotParam.fullScale);
+                            specParam.sampleRate = Number(message.plotParam.sampleRate);
+                            specParam.windowType = String(message.plotParam.windowType).toLowerCase() as WindowType;
+                            specParam.ampScale = String(message.plotParam.ampScale).toLowerCase() as SpectrumFormat;
                             param = specParam;
+                        } else {
+                            let sigParam = new SignalParam();
+                            sigParam.ext = String(message.plotParam.complexMode).toLowerCase() as ExtPlotType;
+                            param = sigParam;
                         }
 
                         this._pageParam =
                         {
                             arrName: message.arrayName,
                             arrLength: Number(message.arrayLength),
+                            signalType: String(message.signalType).toLowerCase() as SignalType,
                             plotParam: param,
                             dataType: message.memParam?.dataType as DataType,
                             dataEndian: message.memParam?.dataEndian as Endian,
@@ -131,7 +161,7 @@ export class MemViewPanel {
         );
     }
 
-    public getPageParam(): MemArrayParam {
+    public getPageParam(): Readonly<MemArrayParam> {
         return this._pageParam;
     }
 
@@ -153,12 +183,12 @@ export class MemViewPanel {
         }
     }
 
-    async plotSignal(yScale: Float64Array, xScale: Float64Array) {
-        await this._panel.webview.postMessage({ command: 'scatterPlot', yScale: yScale, xScale: xScale });
+    async updatePlot(plotData: Array<PlotData>) {
+        await this._panel.webview.postMessage({ command: 'updatePlot', plotData: plotData });
     }
 
-    async plotSpectrum(yScale: Float64Array, xScale: Float64Array) {
-        await this._panel.webview.postMessage({ command: 'spectrumPlot', yScale: yScale, xScale: xScale });
+    async setErrorMessage(message: string) {
+        await this._panel.webview.postMessage({ command: 'setError', text: message });
     }
 
     async setMemoryMode(enabled: boolean = true, type: DataType | undefined = undefined, endian: Endian | undefined = undefined) {
