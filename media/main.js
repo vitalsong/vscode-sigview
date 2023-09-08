@@ -129,6 +129,12 @@ function main() {
                     break;
                 }
 
+            case 'updateArrayLength':
+                {
+                    document.getElementById("arrayLength").value = message.length;
+                    break;
+                }
+
             case 'setMemoryMode':
                 {
                     updateMemoryMode(message);

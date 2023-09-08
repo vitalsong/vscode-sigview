@@ -87,7 +87,7 @@ function pointerType(variable: DebugProtocol.Variable): DataType | undefined {
 
 function filterVariable(variables: any, name: string): DebugProtocol.Variable | undefined {
 	const filtered = variables.filter((v: { name: string; }) => {
-		return v.name === name;
+		return v.name.trim() === name;
 	});
 	if (filtered.length === 1) {
 		return filtered[0];
@@ -117,27 +117,21 @@ async function findVariable(session: vscode.DebugSession, name: string): Promise
 
 	let variables = await session.customRequest('variables', { variablesReference: localVarsRef });
 
-	//find unique variable name in scope
-	let localVar = filterVariable(variables.variables, name);
-	if (localVar) {
-		return localVar;
-	}
-
+	let resvar = undefined;
 	const varpath = name.split(".");
 	for (let i = 0; i < varpath.length; ++i) {
 		const path = varpath[i];
-		localVar = filterVariable(variables.variables, path);
-		if (!localVar) {
+		resvar = filterVariable(variables.variables, path);
+		if (!resvar) {
 			return undefined;
 		}
-
-		//ignore last variables
-		if (i < varpath.length - 1) {
-			variables = await session.customRequest('variables', { variablesReference: localVar.variablesReference });
+		if (i !== varpath.length - 1) {
+			//ignore last variables
+			variables = await session.customRequest('variables', { variablesReference: resvar.variablesReference });
 		}
 	}
 
-	return localVar;
+	return resvar;
 }
 
 class ScopeArray {
@@ -166,21 +160,45 @@ class MemoryArray {
 
 type DebugArray = ScopeArray | MemoryArray;
 
-async function getScopeArray(session: vscode.DebugSession, name: string): Promise<Float64Array | undefined> {
+const indexNameRe = new RegExp('[[0-9]+]');
+
+const subArrRe = new RegExp('\[0:[0-9]+\]');
+
+//check if variable has `[0:N]` subelement
+async function tryGetSubarrayVariable(session: vscode.DebugSession, variable: DebugProtocol.Variable): Promise<DebugProtocol.Variable | undefined> {
+	let resp = await session.customRequest('variables', { variablesReference: variable.variablesReference });
+	const filtered = resp.variables.filter((v: { name: string; }) => {
+		return subArrRe.test(v.name);
+	});
+
+	if (filtered.length === 1) {
+		return filtered[0];
+	}
+}
+
+async function getScopeArray(session: vscode.DebugSession, name: string, isComplex: boolean = false): Promise<Float64Array | undefined> {
 	let variable = await findVariable(session, name);
 	if (!variable) {
 		console.debug('variable is not exist');
 		return;
 	}
 
+	const subbarray = await tryGetSubarrayVariable(session, variable);
+	if (subbarray) {
+		variable = subbarray;
+	}
+
 	// TODO: check supportsVariablePaging
 	const resp = await session.customRequest('variables', { variablesReference: variable.variablesReference });
 
-	//filter '[index]' elements
+	//filter '[00]', '11' elements
 	let variables = resp.variables.filter((v: { name: string; }) => {
-		const value = Number(v.name.slice(1, -1));
-		return !Number.isNaN(value);
+		const isOperator = indexNameRe.test(v.name);
+		const isNumber = !Number.isNaN(Number(v.name));
+		return isOperator || isNumber;
 	});
+
+	//TODO: try extract complex signal (like [0]["re"], [0]["im"]...)
 
 	const array = Float64Array.from(variables, (x: any) => x.value);
 	return array;
@@ -295,6 +313,8 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 				this._arrayCache[pageParam.arrName] = array;
 			}
 			const array = this._arrayCache[pageParam.arrName];
+			length = (length === 0) ? array.length : length;
+			length = (length > array.length) ? array.length : length;
 			return new ScopeArray(pageParam.arrName, array.slice(0, length));
 		}
 	}
@@ -331,55 +351,57 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 
 			this.checkMemoryMode(debugArray);
 
-			const plotParam = pageParam.plotParam;
+			let signal: RealArray | ComplexArray | undefined = undefined;
+			if (isComplex) {
+				signal = new ComplexArray(debugArray.array);
+			} else {
+				signal = new RealArray(debugArray.array);
+			}
+
+			//update if length empty or not supported
+			if (pageParam.arrLength !== signal.size()) {
+				await this._panel.updateArrayLength(signal.size());
+			}
 
 			let plotData = new Array<PlotData>;
-
-			if (isSignalParam(plotParam)) {
-				if (!isComplex) {
-					const xScale = Float64Array.from(Array(debugArray.array.length).keys());
-					plotData = [new PlotData(xScale, debugArray.array)];
-				} else {
-					const cmplxArray = new ComplexArray(debugArray.array);
-					const xScale = Float64Array.from(Array(cmplxArray.size()).keys());
+			const plotParam = pageParam.plotParam;
+			if (plotParam instanceof SignalParam) {
+				if (signal instanceof RealArray) {
+					const xScale = Float64Array.from(Array(signal.size()).keys());
+					plotData = [new PlotData(xScale, signal.array)];
+				} else if (signal instanceof ComplexArray) {
+					const xScale = Float64Array.from(Array(signal.size()).keys());
 					switch (plotParam.ext) {
 						case ExtPlotType.real:
-							plotData = [new PlotData(xScale, cmplxArray.real())];
+							plotData = [new PlotData(xScale, signal.real())];
 							break;
 
 						case ExtPlotType.imag:
-							plotData = [new PlotData(xScale, cmplxArray.imag())];
+							plotData = [new PlotData(xScale, signal.imag())];
 							break;
 
 						case ExtPlotType.abs:
-							plotData = [new PlotData(xScale, cmplxArray.abs())];
+							plotData = [new PlotData(xScale, signal.abs())];
 							break;
 
 
 						case ExtPlotType.phase:
-							plotData = [new PlotData(xScale, cmplxArray.phase())];
+							plotData = [new PlotData(xScale, signal.phase())];
 							break;
 
 						case ExtPlotType.reim:
-							const real = new PlotData(xScale, cmplxArray.real(), "re");
-							const imag = new PlotData(xScale, cmplxArray.imag(), "im");
+							const real = new PlotData(xScale, signal.real(), "re");
+							const imag = new PlotData(xScale, signal.imag(), "im");
 							plotData = [real, imag];
-							break;
-
-						default:
 							break;
 					}
 				}
-			}
-
-			if (isSpectrumParam(plotParam)) {
-				if (!isComplex) {
-					const array = new RealArray(debugArray.array);
-					const res = calcSpectrum(array, plotParam.ampScale, plotParam.windowType, plotParam.fullScale);
+			} else if (plotParam instanceof SpectrumParam) {
+				if (signal instanceof RealArray) {
+					const res = calcSpectrum(signal, plotParam.ampScale, plotParam.windowType, plotParam.fullScale);
 					plotData = [new PlotData(res.freqs.map(x => x * plotParam.sampleRate), res.amps)];
-				} else {
-					const array = new ComplexArray(debugArray.array);
-					const res = calcSpectrum(array, plotParam.ampScale, plotParam.windowType, plotParam.fullScale);
+				} else if (signal instanceof ComplexArray) {
+					const res = calcSpectrum(signal, plotParam.ampScale, plotParam.windowType, plotParam.fullScale);
 					plotData = [new PlotData(res.freqs.map(x => x * plotParam.sampleRate), res.amps)];
 				}
 			}

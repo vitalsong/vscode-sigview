@@ -183,6 +183,10 @@ export class MemViewPanel {
         }
     }
 
+    async updateArrayLength(length: number) {
+        await this._panel.webview.postMessage({ command: 'updateArrayLength', length: length });
+    }
+
     async updatePlot(plotData: Array<PlotData>) {
         await this._panel.webview.postMessage({ command: 'updatePlot', plotData: plotData });
     }
