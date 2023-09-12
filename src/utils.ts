@@ -159,7 +159,9 @@ export function calcSpectrum(sig: Readonly<RealArray | ComplexArray>, specType: 
     let fftDiv: number = nfft;
     let specSize: number = nfft;
     if (sig instanceof RealArray) {
-        re = sig.array;
+        for (let i = 0; i < n; i++) {
+            re[i] = sig.array[i] * win[i];
+        }
         fftDiv = nfft / 2;
         specSize = nfft / 2 + 1;
     } else if (sig instanceof ComplexArray) {
