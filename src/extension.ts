@@ -220,14 +220,6 @@ function isResponse(message: DebugProtocol.ProtocolMessage): message is DebugPro
 	return message.type === "response";
 }
 
-function isSpectrumParam(param: SpectrumParam | SignalParam): param is SpectrumParam {
-	return param.type === PlotType.spectrum;
-}
-
-function isSignalParam(param: SpectrumParam | SignalParam): param is SignalParam {
-	return param.type === PlotType.signal;
-}
-
 type ScopeArrayCache = {
 	[name: string]: Float64Array;
 };
@@ -278,6 +270,8 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 			length *= 2;
 		}
 
+		//TODO: try get std::vector<T> address for first element
+
 		if (isMemoryAddress(pageParam.arrName)) {
 			let dataType = pageParam.dataType;
 			let dataEndian = pageParam.dataEndian;
@@ -291,7 +285,8 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 		if (!variable) {
 			throw new Error(`could not find variable ${pageParam.arrName}`);
 		}
-
+		
+		//TODO: pointer to address (copypaste)
 		if (isPointerVariable(variable)) {
 			let dataType = pageParam.dataType;
 			let dataEndian = pageParam.dataEndian;
@@ -315,6 +310,7 @@ class TestDebugAdapter implements vscode.DebugAdapterTracker, MemViewTracker {
 			const array = this._arrayCache[pageParam.arrName];
 			length = (length === 0) ? array.length : length;
 			length = (length > array.length) ? array.length : length;
+			length = (isComplex) ? Math.floor(length / 2) * 2 : length;
 			return new ScopeArray(pageParam.arrName, array.slice(0, length));
 		}
 	}
