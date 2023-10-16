@@ -4,7 +4,7 @@ Visual Studio Code extension for viewing signals in debug mode
 
 ## Features
 
-![SpectrumUI](./images/spectrum.png)
+![SpectrumUI](./images/how-to-use.gif)
 
 - Time domain plot;
 - Spectrum plot;
